@@ -3,6 +3,13 @@ import "@shoelace-style/shoelace/dist/shoelace.js";
 type BlockType = "heading" | "paragraph" | "image" | "link";
 type ReviewStatus = "pending" | "approved" | "needs-work";
 type Severity = "error" | "warning" | "info";
+type ImageRole = "informative" | "decorative";
+
+interface ImageRoleChange {
+  changedBy: string;
+  changedAt: string;
+  role: ImageRole;
+}
 
 interface CommentReply {
   id: string;
@@ -28,6 +35,8 @@ interface ContentBlock {
   headingLevel?: number;
   imageSrc?: string;
   imageAlt?: string;
+  imageRole?: ImageRole;
+  imageRoleHistory?: ImageRoleChange[];
   linkHref?: string;
   changeReason: string;
   reviewStatus: ReviewStatus;
@@ -110,6 +119,7 @@ function createSeedProject(): ChapterProject {
       text: "图 3-1 城市水循环示意",
       imageSrc: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='420'%3E%3Crect width='800' height='420' fill='%23dcecf3'/%3E%3Ccircle cx='650' cy='85' r='45' fill='%23f4c95d'/%3E%3Cpath d='M0 300 Q180 240 340 300 T800 280 V420 H0Z' fill='%2389b7d0'/%3E%3Cpath d='M130 285 Q220 170 330 285' fill='none' stroke='%233a7c9e' stroke-width='12'/%3E%3C/svg%3E",
       imageAlt: "",
+      imageRole: "informative",
       accessibleText: "",
       changeReason: "",
       reviewStatus: "needs-work",
@@ -151,6 +161,18 @@ function createSeedProject(): ChapterProject {
       accessibleText: "雨水花园用土壤和植物暂时存住雨水。雨水还会慢慢渗入地下，补充地下水。雨很大时，它可以减轻排水管的压力。",
       changeReason: "把并列成分拆成短句，减少专业术语密度。",
       reviewStatus: "pending",
+      comments: [],
+    },
+    {
+      id: "block-img-deco",
+      type: "image",
+      text: "装饰插图：水滴与波纹",
+      imageSrc: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='140'%3E%3Crect width='800' height='140' fill='%23eef5f1'/%3E%3Cpath d='M0 70 Q100 30 200 70 T400 70 T600 70 T800 70' fill='none' stroke='%237fb0a0' stroke-width='10' stroke-linecap='round'/%3E%3Ccircle cx='120' cy='45' r='9' fill='%237fb0a0'/%3E%3Ccircle cx='520' cy='95' r='7' fill='%2396c4b5'/%3E%3C/svg%3E",
+      imageAlt: "",
+      imageRole: "decorative",
+      accessibleText: "",
+      changeReason: "仅作版面装饰，标记为纯装饰，读屏与导出跳过。",
+      reviewStatus: "approved",
       comments: [],
     },
   ];
@@ -213,8 +235,25 @@ function blankBlock(type: BlockType, text: string, extra: Partial<ContentBlock> 
     changeReason: "",
     reviewStatus: "pending",
     comments: [],
+    ...(type === "image" ? { imageRole: "informative" as ImageRole } : {}),
     ...extra,
   };
+}
+
+function isDecorative(block: ContentBlock) {
+  return block.type === "image" && (block.imageRole ?? "informative") === "decorative";
+}
+
+function imageRoleLabel(role: ImageRole) {
+  return role === "decorative" ? "纯装饰" : "信息图";
+}
+
+function readingOrderBlocks() {
+  return project.blocks.filter((block) => !isDecorative(block));
+}
+
+function missingAltImages() {
+  return project.blocks.filter((block) => block.type === "image" && !isDecorative(block) && !(block.imageAlt ?? block.accessibleText).trim());
 }
 
 function sentenceLength(text: string) {
@@ -241,15 +280,16 @@ function analyze(project: ChapterProject): AccessibilityIssue[] {
       }
       lastHeading = level;
     }
-    if (block.type === "image" && !(block.imageAlt ?? block.accessibleText).trim()) {
+    if (block.type === "image" && !isDecorative(block) && !(block.imageAlt ?? block.accessibleText).trim()) {
+      const position = project.blocks.indexOf(block) + 1;
       issues.push({
         id: `image-${block.id}`,
         blockId: block.id,
         type: "image",
         severity: "error",
-        title: "图片缺少替代文本",
-        detail: "视觉用户能看到的图表信息，读屏用户目前无法获得。",
-        suggestion: "说明图中主体、变化和结论；纯装饰图片应标记为空替代文本。",
+        title: "信息图缺少替代文本",
+        detail: `第 ${position} 块「${block.text || "未命名图片"}」被标记为信息图，但还没有替代文本，读屏用户无法获得图中信息，导出也会被阻止。`,
+        suggestion: "说明图中主体、变化和结论；若只是装饰，请把图片类型改为「纯装饰」。",
       });
     }
     if (block.type === "link") {
@@ -322,7 +362,7 @@ function simplifyText(input: string, glossary: GlossaryTerm[]) {
 
 function blockRole(block: ContentBlock) {
   if (block.type === "heading") return `H${block.headingLevel ?? 2} 标题`;
-  if (block.type === "image") return "图片 / 替代文本";
+  if (block.type === "image") return isDecorative(block) ? "装饰图（读屏跳过）" : "信息图 / 替代文本";
   if (block.type === "link") return "链接";
   return "正文段落";
 }
@@ -340,7 +380,7 @@ function severityLabel(severity: Severity) {
 }
 
 function exportHtml(project: ChapterProject) {
-  const body = project.blocks.map((block) => {
+  const body = project.blocks.filter((block) => !isDecorative(block)).map((block) => {
     if (block.type === "heading") {
       const level = Math.min(6, Math.max(1, block.headingLevel ?? 2));
       return `<h${level}>${escapeHtml(block.accessibleText || block.text)}</h${level}>`;
@@ -391,7 +431,17 @@ function download(filename: string, content: string, type = "text/html;charset=u
 function loadProject(): ChapterProject {
   try {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "") as { schema: number; project: ChapterProject };
-    if (stored.schema === 1 && stored.project?.blocks?.length) return stored.project;
+    if (stored.schema === 1 && stored.project?.blocks?.length) {
+      for (const block of stored.project.blocks) {
+        if (block.type === "image") block.imageRole ??= "informative";
+      }
+      for (const version of stored.project.versions ?? []) {
+        for (const block of version.blocks) {
+          if (block.type === "image") block.imageRole ??= "informative";
+        }
+      }
+      return stored.project;
+    }
   } catch {
     // Fall back to the bundled sample.
   }
@@ -408,6 +458,7 @@ let activeIssueId = "";
 let previewMode: "normal" | "assisted" = "normal";
 let selectedVersionId = "";
 let showGlossary = false;
+let exportBlockers: string[] = [];
 let undoStack: ChapterProject[] = [];
 let redoStack: ChapterProject[] = [];
 let saveTimer = 0;
@@ -466,6 +517,8 @@ function render() {
   const activeIssues = list.filter((issue) => issue.blockId === active.id);
   const approved = project.blocks.filter((block) => block.reviewStatus === "approved").length;
   const version = project.versions.find((item) => item.id === selectedVersionId) ?? project.versions[0];
+  const readableBlocks = readingOrderBlocks();
+  const skippedDecorative = project.blocks.length - readableBlocks.length;
 
   app.innerHTML = `
     <div class="app-shell">
@@ -537,7 +590,7 @@ function render() {
           <section class="edit-card rewrite-card">
             <div class="section-heading">
               <div><span class="eyebrow">Accessible rewrite</span><h2>无障碍表达</h2></div>
-              <sl-button size="small" variant="primary" outline data-action="generate">生成易读版本</sl-button>
+              ${isDecorative(active) ? "" : `<sl-button size="small" variant="primary" outline data-action="generate">生成易读版本</sl-button>`}
             </div>
             ${renderAccessibleEditor(active)}
             <label class="field-label" for="reason-${active.id}">改写原因（每处改写必须记录）</label>
@@ -568,8 +621,9 @@ function render() {
           <section class="order-card">
             <div class="section-heading"><div><span class="eyebrow">Screen reader order</span><h2>读屏阅读顺序</h2></div><sl-badge>从上到下</sl-badge></div>
             <ol class="reading-order">
-              ${project.blocks.map((block, index) => `<li class="${block.id === active.id ? "active" : ""}"><b>${index + 1}</b><div><strong>${blockRole(block)}</strong><span>${escapeHtml(block.accessibleText || block.text || "（无内容）")}</span></div></li>`).join("")}
+              ${readableBlocks.map((block, index) => `<li class="${block.id === active.id ? "active" : ""}"><b>${index + 1}</b><div><strong>${blockRole(block)}</strong><span>${escapeHtml(block.accessibleText || block.text || "（无内容）")}</span></div></li>`).join("")}
             </ol>
+            ${skippedDecorative ? `<div class="skipped-note">已跳过 ${skippedDecorative} 张纯装饰图片：画面图注保留，不朗读、不导出。</div>` : ""}
           </section>
 
           <section class="issues-panel">
@@ -598,6 +652,18 @@ function render() {
       </div>
       <div class="term-add"><sl-input id="new-term-source" placeholder="原文术语"></sl-input><sl-input id="new-term-preferred" placeholder="统一表达"></sl-input><sl-button variant="primary" data-action="add-term">添加术语</sl-button></div>
       <sl-button slot="footer" variant="primary" data-action="close-glossary">完成</sl-button>
+    </sl-dialog>
+
+    <sl-dialog label="导出前必须修复" ${exportBlockers.length ? "open" : ""} data-dialog="export-blocked">
+      <p class="blocker-intro">以下信息图缺少替代文本，导出已暂停。请补充替代文本，或把图片类型改为「纯装饰」。</p>
+      <div class="blocker-list">
+        ${exportBlockers.map((id) => {
+          const index = project.blocks.findIndex((block) => block.id === id);
+          const block = project.blocks[index];
+          return `<button class="blocker-item" data-action="goto-block" data-block-id="${id}"><b>第 ${index + 1} 块 · ${escapeHtml(block?.text || "未命名图片")}</b><span>信息图 · 缺少替代文本</span></button>`;
+        }).join("")}
+      </div>
+      <sl-button slot="footer" variant="primary" data-action="close-export-blocked">返回修改</sl-button>
     </sl-dialog>`;
 
   wireLiveFields();
@@ -605,9 +671,18 @@ function render() {
 
 function renderSourceEditor(block: ContentBlock) {
   if (block.type === "image") {
+    const role = block.imageRole ?? "informative";
+    const history = block.imageRoleHistory ?? [];
     return `<div class="image-source"><img src="${escapeHtml(block.imageSrc ?? "")}" alt="" /><div><b>图注</b><p>${escapeHtml(block.text)}</p><b>现有替代文本</b><p>${escapeHtml(block.imageAlt || "（空）")}</p></div></div>
+      <sl-select id="image-role-${block.id}" label="图片类型" value="${role}" help-text="信息图表达内容，需要替代文本；纯装饰保留画面图注，读屏顺序与导出文件都会跳过。">
+        <sl-option value="informative">信息图（表达信息）</sl-option>
+        <sl-option value="decorative">纯装饰</sl-option>
+      </sl-select>
       <sl-input id="source-${block.id}" data-field="source" label="图注" value="${escapeHtml(block.text)}"></sl-input>
-      <sl-input id="image-alt-${block.id}" data-field="image-alt" label="替代文本" value="${escapeHtml(block.imageAlt ?? "")}" help-text="描述图片传达的信息，不写“图片”二字。"></sl-input>`;
+      ${role === "informative"
+        ? `<sl-input id="image-alt-${block.id}" data-field="image-alt" label="替代文本" value="${escapeHtml(block.imageAlt ?? "")}" help-text="描述图片传达的信息，不写“图片”二字。"></sl-input>`
+        : `<div class="deco-note">纯装饰图片：不要求替代文本。画面上的图注保留，读屏顺序与导出的无障碍 HTML 都会跳过此图。</div>`}
+      ${history.length ? `<div class="role-history"><b>类型调整记录</b>${history.map((entry) => `<p>${escapeHtml(entry.changedBy)} 改为「${imageRoleLabel(entry.role)}」 · ${new Date(entry.changedAt).toLocaleString()}</p>`).join("")}</div>` : ""}`;
   }
   if (block.type === "link") {
     return `<sl-input id="source-${block.id}" data-field="source" label="原链接文案" value="${escapeHtml(block.text)}"></sl-input><sl-input id="link-href-${block.id}" data-field="link-href" label="链接地址" value="${escapeHtml(block.linkHref ?? "")}"></sl-input>`;
@@ -620,32 +695,46 @@ function renderSourceEditor(block: ContentBlock) {
 
 function renderAccessibleEditor(block: ContentBlock) {
   if (block.type === "image") {
+    if (isDecorative(block)) {
+      return `<div class="deco-note">纯装饰图片不要求替代文本。读屏顺序与导出的无障碍 HTML 都会跳过此图，画面上的图注保留。</div>`;
+    }
     return `<sl-textarea id="accessible-${block.id}" data-field="accessible" rows="3" label="图片替代文本" value="${escapeHtml(block.imageAlt || block.accessibleText)}" help-text="读屏软件会朗读这里的内容。"></sl-textarea>`;
   }
   return `<sl-textarea id="accessible-${block.id}" data-field="accessible" rows="6" value="${escapeHtml(block.accessibleText)}"></sl-textarea>`;
 }
 
 function renderPreview() {
-  return project.blocks.map((block, index) => {
+  const orderIds = readingOrderBlocks().map((block) => block.id);
+  return project.blocks.map((block) => {
     const content = escapeHtml(block.accessibleText || block.text);
+    const decorative = isDecorative(block);
+    const marker = decorative
+      ? `<span class="deco-marker">装饰·不朗读</span>`
+      : `<span class="order-marker">${orderIds.indexOf(block.id) + 1}</span>`;
     if (block.type === "heading") {
       const tag = `h${Math.min(6, Math.max(1, block.headingLevel ?? 2))}`;
-      return `<${tag} class="${block.id === activeBlockId ? "active-block" : ""}"><span class="order-marker">${index + 1}</span>${content}</${tag}>`;
+      return `<${tag} class="${block.id === activeBlockId ? "active-block" : ""}">${marker}${content}</${tag}>`;
     }
     if (block.type === "image") {
-      return `<figure class="${block.id === activeBlockId ? "active-block" : ""}"><img src="${escapeHtml(block.imageSrc ?? "")}" alt="${escapeHtml(block.imageAlt || block.accessibleText)}"><figcaption><span class="order-marker">${index + 1}</span>${escapeHtml(block.text)}</figcaption></figure>`;
+      return `<figure class="${block.id === activeBlockId ? "active-block" : ""} ${decorative ? "decorative" : ""}"><img src="${escapeHtml(block.imageSrc ?? "")}" alt="${decorative ? "" : escapeHtml(block.imageAlt || block.accessibleText)}"><figcaption>${marker}${escapeHtml(block.text)}${decorative ? `<span class="deco-pill">纯装饰 · 读屏与导出跳过</span>` : ""}</figcaption></figure>`;
     }
     if (block.type === "link") {
-      return `<p class="${block.id === activeBlockId ? "active-block" : ""}"><span class="order-marker">${index + 1}</span><a href="${escapeHtml(block.linkHref ?? "#")}" onclick="return false">${content}</a><span class="link-role">链接</span></p>`;
+      return `<p class="${block.id === activeBlockId ? "active-block" : ""}">${marker}<a href="${escapeHtml(block.linkHref ?? "#")}" onclick="return false">${content}</a><span class="link-role">链接</span></p>`;
     }
-    return `<p class="${block.id === activeBlockId ? "active-block" : ""}"><span class="order-marker">${index + 1}</span>${content}</p>`;
+    return `<p class="${block.id === activeBlockId ? "active-block" : ""}">${marker}${content}</p>`;
   }).join("");
 }
 
 function renderVersionDiff(version: VersionSnapshot, current: ContentBlock) {
   const oldBlock = version.blocks.find((block) => block.id === current.id);
   if (!oldBlock) return `<div class="empty-note">当前内容块不在该版本中。</div>`;
-  return `<div class="diff-column"><span>旧版</span><p>${escapeHtml(oldBlock.accessibleText || oldBlock.text)}</p></div><div class="diff-column current"><span>当前</span><p>${escapeHtml(current.accessibleText || current.text)}</p></div>`;
+  const textDiff = `<div class="diff-column"><span>旧版</span><p>${escapeHtml(oldBlock.accessibleText || oldBlock.text)}</p></div><div class="diff-column current"><span>当前</span><p>${escapeHtml(current.accessibleText || current.text)}</p></div>`;
+  if (current.type !== "image") return textDiff;
+  const oldRole = oldBlock.imageRole ?? "informative";
+  const newRole = current.imageRole ?? "informative";
+  const history = current.imageRoleHistory ?? [];
+  const last = history[history.length - 1];
+  return `${textDiff}<div class="diff-column role-diff"><span>图片类型</span><p>旧版：${imageRoleLabel(oldRole)} → 当前：${imageRoleLabel(newRole)}</p>${last ? `<p class="role-change">调整记录：${escapeHtml(last.changedBy)} 改为「${imageRoleLabel(last.role)}」 · ${new Date(last.changedAt).toLocaleString()}</p>` : ""}</div>`;
 }
 
 function wireLiveFields() {
@@ -753,8 +842,25 @@ app.addEventListener("click", (event) => {
     commit("全部审核通过", (draft) => { draft.blocks.forEach((block) => { block.reviewStatus = "approved"; }); });
   }
   if (action === "export") {
-    download(`${project.title}-无障碍版.html`, exportHtml(project));
-    document.documentElement.dataset.lastAction = "已导出无障碍 HTML";
+    const missing = missingAltImages();
+    if (missing.length) {
+      exportBlockers = missing.map((block) => block.id);
+      document.documentElement.dataset.lastAction = "导出已暂停：有信息图缺少替代文本";
+      render();
+    } else {
+      exportBlockers = [];
+      download(`${project.title}-无障碍版.html`, exportHtml(project));
+      document.documentElement.dataset.lastAction = "已导出无障碍 HTML";
+      render();
+    }
+  }
+  if (action === "goto-block") {
+    activeBlockId = target.dataset.blockId ?? activeBlockId;
+    exportBlockers = [];
+    render();
+  }
+  if (action === "close-export-blocked") {
+    exportBlockers = [];
     render();
   }
   if (action === "import") app.querySelector<HTMLInputElement>("#chapter-file")?.click();
@@ -766,6 +872,19 @@ app.addEventListener("sl-change", (event) => {
   if (element.id.startsWith("heading-level-")) {
     const level = Number((element as HTMLElement & { value: string }).value);
     updateActiveBlock((block) => { block.headingLevel = level; block.reviewStatus = "pending"; }, "修改标题层级");
+  }
+  if (element.id.startsWith("image-role-")) {
+    const role = (element as HTMLElement & { value: string }).value as ImageRole;
+    updateActiveBlock((block) => {
+      if (block.type !== "image") return;
+      const current = block.imageRole ?? "informative";
+      if (current === role) return;
+      if (block.reviewStatus === "approved") {
+        block.imageRoleHistory = [...(block.imageRoleHistory ?? []), { changedBy: "当前编辑", changedAt: new Date().toISOString(), role }];
+      }
+      block.imageRole = role;
+      block.reviewStatus = "pending";
+    }, "调整图片类型");
   }
   if (element.id === "version-select") {
     selectedVersionId = (element as HTMLElement & { value: string }).value;

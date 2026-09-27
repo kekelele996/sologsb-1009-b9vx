@@ -101,6 +101,10 @@ sl-textarea::part(textarea) { line-height: 1.65; }
 .image-source b { display: block; margin-bottom: 3px; color: #5b6862; font-size: 9px; text-transform: uppercase; }
 .image-source p { margin: 0 0 7px; color: #30413b; font-size: 11px; }
 .field-label { display: block; color: #5f6e68; font-size: 10px; font-weight: 700; margin: 8px 0 5px; }
+.deco-note { border: 1px dashed #c9d4ce; border-radius: 8px; background: #f4f8f5; color: #4d6157; font-size: 10px; line-height: 1.6; padding: 9px 10px; margin-bottom: 9px; }
+.role-history { border-top: 1px dashed #dfe5e1; padding-top: 7px; margin-top: 3px; }
+.role-history b { display: block; color: #5b6862; font-size: 9px; text-transform: uppercase; margin-bottom: 3px; }
+.role-history p { margin: 2px 0; color: #6d7a73; font-size: 10px; }
 .comment-compose { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; }
 .comment-compose sl-button { margin-bottom: 9px; }
 .comment-list { display: grid; gap: 8px; }
@@ -129,6 +133,9 @@ sl-textarea::part(textarea) { line-height: 1.65; }
 .reader-preview .active-block { background: #fff4d9; box-shadow: 0 0 0 4px #fff4d9; border-radius: 4px; }
 .order-marker { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #e8f0eb; color: #39705a; font: 700 9px ui-monospace, monospace; margin-right: 5px; vertical-align: 1px; }
 .mode-assisted .order-marker { background: #215f4a; color: #fff; }
+.deco-marker { display: inline-block; border: 1px solid #cfd8d3; border-radius: 99px; color: #68776f; background: #f1f5f2; padding: 1px 7px; font-size: 9px; margin-right: 5px; vertical-align: 1px; }
+.deco-pill { margin-left: 6px; border-radius: 99px; background: #eef3f0; color: #5d6f66; padding: 1px 7px; font-size: 8px; }
+.reader-preview figure.decorative img { opacity: .92; }
 .link-role { margin-left: 6px; color: #67746e; border: 1px solid #cbd5d0; border-radius: 99px; padding: 1px 5px; font-size: 8px; }
 .reading-order { list-style: none; padding: 0; margin: 0; display: grid; gap: 5px; max-height: 260px; overflow-y: auto; }
 .reading-order li { display: grid; grid-template-columns: 22px 1fr; gap: 7px; padding: 7px; border-radius: 7px; background: #f5f7f5; }
@@ -137,6 +144,13 @@ sl-textarea::part(textarea) { line-height: 1.65; }
 .reading-order strong, .reading-order span { display: block; }
 .reading-order strong { font-size: 9px; color: #66736d; }
 .reading-order span { font-size: 10px; line-height: 1.4; margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.skipped-note { margin-top: 7px; color: #6d7a73; font-size: 9px; line-height: 1.5; border-top: 1px dashed #dfe5e1; padding-top: 7px; }
+.blocker-intro { color: #4b5a53; font-size: 12px; line-height: 1.6; margin: 0 0 10px; }
+.blocker-list { display: grid; gap: 6px; }
+.blocker-item { text-align: left; border: 1px solid #efd1ce; border-left: 3px solid var(--red); border-radius: 8px; background: #fff8f7; padding: 9px 10px; cursor: pointer; display: grid; gap: 2px; }
+.blocker-item:hover { background: #fff1ef; }
+.blocker-item b { font-size: 11px; color: #7c2a22; }
+.blocker-item span { font-size: 9px; color: #8a7a76; }
 .issue-list { display: grid; gap: 5px; max-height: 280px; overflow-y: auto; }
 .issue-list button { display: grid; gap: 3px; text-align: left; border: 1px solid #e0e4e2; border-left: 3px solid #d68b20; border-radius: 7px; background: #fff; padding: 8px; cursor: pointer; }
 .issue-list button.error { border-left-color: var(--red); }
@@ -151,6 +165,8 @@ sl-textarea::part(textarea) { line-height: 1.65; }
 .diff-column.current { border-left-color: #34795d; background: #f2f9f5; }
 .diff-column span { color: #7b8580; font-size: 8px; font-weight: 800; text-transform: uppercase; }
 .diff-column p { margin: 4px 0 0; font-size: 10px; line-height: 1.5; }
+.role-diff { border-left-color: #6a8f80; background: #f4f8f6; }
+.role-change { color: #55665e; }
 
 .statusbar { min-height: 30px; padding: 6px 15px; display: flex; justify-content: space-between; color: #9db1a8; background: #1a342c; font-size: 9px; }
 .glossary-editor { display: grid; gap: 8px; max-height: 380px; overflow-y: auto; }
