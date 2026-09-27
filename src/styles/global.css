@@ -100,6 +100,11 @@ sl-textarea::part(textarea) { line-height: 1.65; }
 .image-source img { width: 150px; height: 90px; object-fit: cover; border-radius: 7px; background: #d7e3df; }
 .image-source b { display: block; margin-bottom: 3px; color: #5b6862; font-size: 9px; text-transform: uppercase; }
 .image-source p { margin: 0 0 7px; color: #30413b; font-size: 11px; }
+.kind-switch { display: inline-flex; background: #e8ece9; padding: 3px; border-radius: 8px; margin: 0 0 9px; }
+.kind-switch button { border: 0; background: transparent; color: #5f6c66; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 11px; }
+.kind-switch button.active { background: #fff; color: #215f4a; font-weight: 750; box-shadow: 0 2px 5px rgba(0,0,0,.06); }
+.kind-meta { margin: -4px 0 9px; color: #7b8680; font-size: 10px; }
+.deco-note { border: 1px dashed #cdb98c; border-radius: 8px; background: #fdf8ec; color: #7a5c17; padding: 9px 11px; font-size: 11px; line-height: 1.55; margin-bottom: 9px; }
 .field-label { display: block; color: #5f6e68; font-size: 10px; font-weight: 700; margin: 8px 0 5px; }
 .comment-compose { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; }
 .comment-compose sl-button { margin-bottom: 9px; }
@@ -130,6 +135,9 @@ sl-textarea::part(textarea) { line-height: 1.65; }
 .order-marker { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #e8f0eb; color: #39705a; font: 700 9px ui-monospace, monospace; margin-right: 5px; vertical-align: 1px; }
 .mode-assisted .order-marker { background: #215f4a; color: #fff; }
 .link-role { margin-left: 6px; color: #67746e; border: 1px solid #cbd5d0; border-radius: 99px; padding: 1px 5px; font-size: 8px; }
+.reader-preview figure.decorative img { outline: 1px dashed #cdb98c; outline-offset: 3px; }
+.deco-tag { display: inline-block; margin-right: 6px; padding: 1px 7px; border-radius: 99px; background: #f0e5c8; color: #7a5c17; font-size: 9px; font-weight: 700; }
+.order-note { margin-top: 8px; color: #8a6a1f; font-size: 10px; line-height: 1.5; }
 .reading-order { list-style: none; padding: 0; margin: 0; display: grid; gap: 5px; max-height: 260px; overflow-y: auto; }
 .reading-order li { display: grid; grid-template-columns: 22px 1fr; gap: 7px; padding: 7px; border-radius: 7px; background: #f5f7f5; }
 .reading-order li.active { background: #e7f1ec; box-shadow: inset 3px 0 #2e785c; }

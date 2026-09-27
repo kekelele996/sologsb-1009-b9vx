@@ -3,6 +3,7 @@ import "@shoelace-style/shoelace/dist/shoelace.js";
 type BlockType = "heading" | "paragraph" | "image" | "link";
 type ReviewStatus = "pending" | "approved" | "needs-work";
 type Severity = "error" | "warning" | "info";
+type ImageKind = "informative" | "decorative";
 
 interface CommentReply {
   id: string;
@@ -28,6 +29,9 @@ interface ContentBlock {
   headingLevel?: number;
   imageSrc?: string;
   imageAlt?: string;
+  imageKind?: ImageKind;
+  imageKindBy?: string;
+  imageKindAt?: string;
   linkHref?: string;
   changeReason: string;
   reviewStatus: ReviewStatus;
@@ -68,10 +72,16 @@ interface AccessibilityIssue {
   title: string;
   detail: string;
   suggestion: string;
+  target?: string;
 }
 
 const STORAGE_KEY = "sologsb-1009-accessible-textbook-v1";
+const EDITOR_NAME = "当前编辑";
 const uid = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+
+const imageKindOf = (block: ContentBlock): ImageKind => block.imageKind ?? "informative";
+const isDecorativeImage = (block: ContentBlock) => block.type === "image" && imageKindOf(block) === "decorative";
+const imageKindLabel = (kind: ImageKind) => (kind === "decorative" ? "纯装饰" : "表达信息");
 
 function createSeedProject(): ChapterProject {
   const blocks: ContentBlock[] = [
@@ -110,6 +120,7 @@ function createSeedProject(): ChapterProject {
       text: "图 3-1 城市水循环示意",
       imageSrc: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='420'%3E%3Crect width='800' height='420' fill='%23dcecf3'/%3E%3Ccircle cx='650' cy='85' r='45' fill='%23f4c95d'/%3E%3Cpath d='M0 300 Q180 240 340 300 T800 280 V420 H0Z' fill='%2389b7d0'/%3E%3Cpath d='M130 285 Q220 170 330 285' fill='none' stroke='%233a7c9e' stroke-width='12'/%3E%3C/svg%3E",
       imageAlt: "",
+      imageKind: "informative",
       accessibleText: "",
       changeReason: "",
       reviewStatus: "needs-work",
@@ -132,6 +143,20 @@ function createSeedProject(): ChapterProject {
       accessibleText: "打开水循环互动实验",
       changeReason: "改为说明链接目标的独立文案。",
       reviewStatus: "pending",
+      comments: [],
+    },
+    {
+      id: "block-img-deco",
+      type: "image",
+      text: "章节分隔装饰纹样",
+      imageSrc: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='120'%3E%3Crect width='800' height='120' fill='%23f4ecdc'/%3E%3Cpath d='M0 62 Q100 22 200 62 T400 62 T600 62 T800 62' fill='none' stroke='%23b98a3e' stroke-width='7' stroke-linecap='round'/%3E%3Ccircle cx='400' cy='62' r='9' fill='%23b98a3e'/%3E%3C/svg%3E",
+      imageAlt: "",
+      imageKind: "decorative",
+      imageKindBy: EDITOR_NAME,
+      imageKindAt: "2026-09-20T09:00:00.000Z",
+      accessibleText: "",
+      changeReason: "仅作版面分隔装饰，标记为纯装饰，读屏顺序与导出文件均跳过。",
+      reviewStatus: "approved",
       comments: [],
     },
     {
@@ -225,6 +250,7 @@ function sentenceLength(text: string) {
 function analyze(project: ChapterProject): AccessibilityIssue[] {
   const issues: AccessibilityIssue[] = [];
   let lastHeading = 0;
+  const imageOrder = new Map(project.blocks.filter((block) => block.type === "image").map((block, index) => [block.id, index + 1]));
   for (const block of project.blocks) {
     if (block.type === "heading") {
       const level = block.headingLevel ?? 2;
@@ -241,15 +267,16 @@ function analyze(project: ChapterProject): AccessibilityIssue[] {
       }
       lastHeading = level;
     }
-    if (block.type === "image" && !(block.imageAlt ?? block.accessibleText).trim()) {
+    if (block.type === "image" && !isDecorativeImage(block) && !(block.imageAlt ?? block.accessibleText).trim()) {
       issues.push({
         id: `image-${block.id}`,
         blockId: block.id,
         type: "image",
         severity: "error",
-        title: "图片缺少替代文本",
-        detail: "视觉用户能看到的图表信息，读屏用户目前无法获得。",
-        suggestion: "说明图中主体、变化和结论；纯装饰图片应标记为空替代文本。",
+        title: "信息图缺少替代文本",
+        detail: `第 ${imageOrder.get(block.id)} 张图片“${block.text || "未命名图片"}”已标为“表达信息”，读屏用户目前无法获得图中信息，导出也会被拦截。`,
+        suggestion: "说明图中主体、变化和结论；若仅为版面装饰，请在图片信息中改标为“纯装饰”。",
+        target: `第 ${imageOrder.get(block.id)} 张图 · ${block.text || "未命名图片"}`,
       });
     }
     if (block.type === "link") {
@@ -322,7 +349,7 @@ function simplifyText(input: string, glossary: GlossaryTerm[]) {
 
 function blockRole(block: ContentBlock) {
   if (block.type === "heading") return `H${block.headingLevel ?? 2} 标题`;
-  if (block.type === "image") return "图片 / 替代文本";
+  if (block.type === "image") return isDecorativeImage(block) ? "纯装饰图片" : "信息图 / 替代文本";
   if (block.type === "link") return "链接";
   return "正文段落";
 }
@@ -346,13 +373,14 @@ function exportHtml(project: ChapterProject) {
       return `<h${level}>${escapeHtml(block.accessibleText || block.text)}</h${level}>`;
     }
     if (block.type === "image") {
+      if (isDecorativeImage(block)) return "";
       return `<figure><img src="${escapeHtml(block.imageSrc ?? "")}" alt="${escapeHtml(block.imageAlt || block.accessibleText)}"><figcaption>${escapeHtml(block.text)}</figcaption></figure>`;
     }
     if (block.type === "link") {
       return `<p><a href="${escapeHtml(block.linkHref ?? "#")}">${escapeHtml(block.accessibleText || block.text)}</a></p>`;
     }
     return `<p>${escapeHtml(block.accessibleText || block.text)}</p>`;
-  }).join("\n      ");
+  }).filter(Boolean).join("\n      ");
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -386,6 +414,16 @@ function download(filename: string, content: string, type = "text/html;charset=u
   anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+function notify(message: string) {
+  const alert = document.createElement("sl-alert");
+  alert.setAttribute("variant", "danger");
+  alert.setAttribute("closable", "");
+  alert.setAttribute("duration", "5000");
+  alert.textContent = message;
+  document.body.append(alert);
+  void (alert as unknown as { toast: () => Promise<void> }).toast();
 }
 
 function loadProject(): ChapterProject {
@@ -537,7 +575,7 @@ function render() {
           <section class="edit-card rewrite-card">
             <div class="section-heading">
               <div><span class="eyebrow">Accessible rewrite</span><h2>无障碍表达</h2></div>
-              <sl-button size="small" variant="primary" outline data-action="generate">生成易读版本</sl-button>
+              <sl-button size="small" variant="primary" outline data-action="generate" ${isDecorativeImage(active) ? "disabled" : ""}>生成易读版本</sl-button>
             </div>
             ${renderAccessibleEditor(active)}
             <label class="field-label" for="reason-${active.id}">改写原因（每处改写必须记录）</label>
@@ -568,14 +606,15 @@ function render() {
           <section class="order-card">
             <div class="section-heading"><div><span class="eyebrow">Screen reader order</span><h2>读屏阅读顺序</h2></div><sl-badge>从上到下</sl-badge></div>
             <ol class="reading-order">
-              ${project.blocks.map((block, index) => `<li class="${block.id === active.id ? "active" : ""}"><b>${index + 1}</b><div><strong>${blockRole(block)}</strong><span>${escapeHtml(block.accessibleText || block.text || "（无内容）")}</span></div></li>`).join("")}
+              ${project.blocks.filter((block) => !isDecorativeImage(block)).map((block, index) => `<li class="${block.id === active.id ? "active" : ""}"><b>${index + 1}</b><div><strong>${blockRole(block)}</strong><span>${escapeHtml(block.accessibleText || block.text || "（无内容）")}</span></div></li>`).join("")}
             </ol>
+            ${project.blocks.some(isDecorativeImage) ? `<div class="order-note">已跳过 ${project.blocks.filter(isDecorativeImage).length} 张纯装饰图片（画面保留图注，读屏不朗读）</div>` : ""}
           </section>
 
           <section class="issues-panel">
             <div class="section-heading"><div><span class="eyebrow">All checks</span><h2>全章问题</h2></div><sl-button size="small" variant="default" outline data-action="approve-all">全部通过</sl-button></div>
             <div class="issue-list">
-              ${list.length ? list.map((issue) => `<button class="${issue.id === activeIssueId ? "active" : ""} ${issue.severity}" data-action="jump-issue" data-issue-id="${issue.id}" data-block-id="${issue.blockId}"><span>${severityLabel(issue.severity)}</span><b>${escapeHtml(issue.title)}</b><small>段 ${project.blocks.findIndex((block) => block.id === issue.blockId) + 1} · ${escapeHtml(issue.suggestion)}</small></button>`).join("") : `<div class="issue-clear">✓ 全章检查通过</div>`}
+              ${list.length ? list.map((issue) => `<button class="${issue.id === activeIssueId ? "active" : ""} ${issue.severity}" data-action="jump-issue" data-issue-id="${issue.id}" data-block-id="${issue.blockId}"><span>${severityLabel(issue.severity)}</span><b>${escapeHtml(issue.title)}</b><small>${issue.target ? escapeHtml(issue.target) : `段 ${project.blocks.findIndex((block) => block.id === issue.blockId) + 1}`} · ${escapeHtml(issue.suggestion)}</small></button>`).join("") : `<div class="issue-clear">✓ 全章检查通过</div>`}
             </div>
           </section>
 
@@ -605,9 +644,20 @@ function render() {
 
 function renderSourceEditor(block: ContentBlock) {
   if (block.type === "image") {
+    const decorative = isDecorativeImage(block);
+    const kindMeta = block.imageKindBy
+      ? `<p class="kind-meta">类型由 ${escapeHtml(block.imageKindBy)} 标记${block.imageKindAt ? ` · ${new Date(block.imageKindAt).toLocaleString()}` : ""}</p>`
+      : "";
     return `<div class="image-source"><img src="${escapeHtml(block.imageSrc ?? "")}" alt="" /><div><b>图注</b><p>${escapeHtml(block.text)}</p><b>现有替代文本</b><p>${escapeHtml(block.imageAlt || "（空）")}</p></div></div>
+      <span class="field-label">图片类型（决定读屏与导出是否朗读）</span>
+      <div class="kind-switch" role="group" aria-label="图片类型">
+        <button type="button" class="${decorative ? "" : "active"}" data-action="image-kind" data-kind="informative">表达信息</button>
+        <button type="button" class="${decorative ? "active" : ""}" data-action="image-kind" data-kind="decorative">纯装饰</button>
+      </div>
+      ${kindMeta}
+      ${decorative ? `<div class="deco-note">纯装饰图片：画面保留图注，不要求替代文本；读屏顺序与导出文件都会跳过此图。</div>` : ""}
       <sl-input id="source-${block.id}" data-field="source" label="图注" value="${escapeHtml(block.text)}"></sl-input>
-      <sl-input id="image-alt-${block.id}" data-field="image-alt" label="替代文本" value="${escapeHtml(block.imageAlt ?? "")}" help-text="描述图片传达的信息，不写“图片”二字。"></sl-input>`;
+      ${decorative ? "" : `<sl-input id="image-alt-${block.id}" data-field="image-alt" label="替代文本" value="${escapeHtml(block.imageAlt ?? "")}" help-text="描述图片传达的信息，不写“图片”二字。"></sl-input>`}`;
   }
   if (block.type === "link") {
     return `<sl-input id="source-${block.id}" data-field="source" label="原链接文案" value="${escapeHtml(block.text)}"></sl-input><sl-input id="link-href-${block.id}" data-field="link-href" label="链接地址" value="${escapeHtml(block.linkHref ?? "")}"></sl-input>`;
@@ -620,31 +670,49 @@ function renderSourceEditor(block: ContentBlock) {
 
 function renderAccessibleEditor(block: ContentBlock) {
   if (block.type === "image") {
+    if (isDecorativeImage(block)) {
+      return `<div class="deco-note">该图已标为纯装饰，读屏软件与导出文件将跳过，无需填写替代文本。</div>`;
+    }
     return `<sl-textarea id="accessible-${block.id}" data-field="accessible" rows="3" label="图片替代文本" value="${escapeHtml(block.imageAlt || block.accessibleText)}" help-text="读屏软件会朗读这里的内容。"></sl-textarea>`;
   }
   return `<sl-textarea id="accessible-${block.id}" data-field="accessible" rows="6" value="${escapeHtml(block.accessibleText)}"></sl-textarea>`;
 }
 
 function renderPreview() {
-  return project.blocks.map((block, index) => {
+  const order = new Map(project.blocks.filter((block) => !isDecorativeImage(block)).map((block, index) => [block.id, index + 1]));
+  return project.blocks.map((block) => {
+    const marker = order.has(block.id) ? `<span class="order-marker">${order.get(block.id)}</span>` : "";
     const content = escapeHtml(block.accessibleText || block.text);
     if (block.type === "heading") {
       const tag = `h${Math.min(6, Math.max(1, block.headingLevel ?? 2))}`;
-      return `<${tag} class="${block.id === activeBlockId ? "active-block" : ""}"><span class="order-marker">${index + 1}</span>${content}</${tag}>`;
+      return `<${tag} class="${block.id === activeBlockId ? "active-block" : ""}">${marker}${content}</${tag}>`;
     }
     if (block.type === "image") {
-      return `<figure class="${block.id === activeBlockId ? "active-block" : ""}"><img src="${escapeHtml(block.imageSrc ?? "")}" alt="${escapeHtml(block.imageAlt || block.accessibleText)}"><figcaption><span class="order-marker">${index + 1}</span>${escapeHtml(block.text)}</figcaption></figure>`;
+      if (isDecorativeImage(block)) {
+        return `<figure class="decorative ${block.id === activeBlockId ? "active-block" : ""}"><img src="${escapeHtml(block.imageSrc ?? "")}" alt=""><figcaption><span class="deco-tag">纯装饰 · 读屏与导出跳过</span>${escapeHtml(block.text)}</figcaption></figure>`;
+      }
+      return `<figure class="${block.id === activeBlockId ? "active-block" : ""}"><img src="${escapeHtml(block.imageSrc ?? "")}" alt="${escapeHtml(block.imageAlt || block.accessibleText)}"><figcaption>${marker}${escapeHtml(block.text)}</figcaption></figure>`;
     }
     if (block.type === "link") {
-      return `<p class="${block.id === activeBlockId ? "active-block" : ""}"><span class="order-marker">${index + 1}</span><a href="${escapeHtml(block.linkHref ?? "#")}" onclick="return false">${content}</a><span class="link-role">链接</span></p>`;
+      return `<p class="${block.id === activeBlockId ? "active-block" : ""}">${marker}<a href="${escapeHtml(block.linkHref ?? "#")}" onclick="return false">${content}</a><span class="link-role">链接</span></p>`;
     }
-    return `<p class="${block.id === activeBlockId ? "active-block" : ""}"><span class="order-marker">${index + 1}</span>${content}</p>`;
+    return `<p class="${block.id === activeBlockId ? "active-block" : ""}">${marker}${content}</p>`;
   }).join("");
 }
 
 function renderVersionDiff(version: VersionSnapshot, current: ContentBlock) {
   const oldBlock = version.blocks.find((block) => block.id === current.id);
   if (!oldBlock) return `<div class="empty-note">当前内容块不在该版本中。</div>`;
+  if (current.type === "image") {
+    const kindInfo = (block: ContentBlock) => {
+      const who = block.imageKindBy ? ` · ${block.imageKindBy} 标记` : "";
+      return `${imageKindLabel(imageKindOf(block))}${who}`;
+    };
+    const altText = (block: ContentBlock) => isDecorativeImage(block)
+      ? "（装饰图：读屏顺序与导出文件跳过）"
+      : escapeHtml(block.imageAlt || block.accessibleText || "（无替代文本）");
+    return `<div class="diff-column"><span>旧版 · ${escapeHtml(kindInfo(oldBlock))}</span><p>${altText(oldBlock)}</p></div><div class="diff-column current"><span>当前 · ${escapeHtml(kindInfo(current))}</span><p>${altText(current)}</p></div>`;
+  }
   return `<div class="diff-column"><span>旧版</span><p>${escapeHtml(oldBlock.accessibleText || oldBlock.text)}</p></div><div class="diff-column current"><span>当前</span><p>${escapeHtml(current.accessibleText || current.text)}</p></div>`;
 }
 
@@ -689,8 +757,19 @@ app.addEventListener("click", (event) => {
     render();
     requestAnimationFrame(() => app.querySelector<HTMLElement>(".editor-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
+  if (action === "image-kind") {
+    const kind: ImageKind = target.dataset.kind === "decorative" ? "decorative" : "informative";
+    updateActiveBlock((block) => {
+      if (block.type !== "image" || imageKindOf(block) === kind) return;
+      block.imageKind = kind;
+      block.imageKindBy = EDITOR_NAME;
+      block.imageKindAt = new Date().toISOString();
+      block.reviewStatus = "pending";
+    }, `将图片标为${imageKindLabel(kind)}`);
+  }
   if (action === "generate") {
     const block = activeBlock();
+    if (isDecorativeImage(block)) return;
     const suggestion = block.type === "link"
       ? "打开水循环互动实验"
       : simplifyText(block.type === "image" ? block.imageAlt || block.text : block.text, project.glossary);
@@ -753,8 +832,18 @@ app.addEventListener("click", (event) => {
     commit("全部审核通过", (draft) => { draft.blocks.forEach((block) => { block.reviewStatus = "approved"; }); });
   }
   if (action === "export") {
+    const blocking = issues().filter((issue) => issue.type === "image");
+    if (blocking.length) {
+      activeIssueId = blocking[0].id;
+      activeBlockId = blocking[0].blockId;
+      document.documentElement.dataset.lastAction = `导出被拦截：${blocking.length} 张信息图缺少替代文本`;
+      render();
+      notify(`还有 ${blocking.length} 张信息图缺少替代文本，已阻止导出。请补全替代文本，或将纯装饰图片改标为“纯装饰”。`);
+      return;
+    }
+    const skipped = project.blocks.filter(isDecorativeImage).length;
     download(`${project.title}-无障碍版.html`, exportHtml(project));
-    document.documentElement.dataset.lastAction = "已导出无障碍 HTML";
+    document.documentElement.dataset.lastAction = skipped ? `已导出无障碍 HTML（跳过 ${skipped} 张纯装饰图片）` : "已导出无障碍 HTML";
     render();
   }
   if (action === "import") app.querySelector<HTMLInputElement>("#chapter-file")?.click();
